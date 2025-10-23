@@ -1,96 +1,231 @@
-const START_YEAR = 1997;
-const KEY = "0123456789ABCDFEGHIJKLMNOPQRSTUVWXYZ".split("");
+import { date2Rtime, rtime2Date } from "./xid";
 
-export function num2key(n: string) {
-    var res = [];
-    var num = parseInt(n);
-    if (num <= 0) return [];
-    var klen = KEY.length;
-    while (num > 0) {
-        var v = num % klen;
-        num = (num - v) / klen;
-        var k = KEY[v];
-        //if (k == 'I') k = 'i';
-        //if (k == 'Z') k = 'z';
-        res.push(k);
+export function checkStringFormat(input?: string) {
+    if (input && input.length < 4) {
+        return false;
     }
-    return res.reverse();
-}
-
-export function key2num(keys: string) {
-    var num = 0;
-    var mult = 1;
-    var klen = KEY.length;
-    for (var i = keys.length - 1; i >= 0; i -= 1) {
-        num += mult * KEY.indexOf(keys[i]!);
-        mult *= klen;
+    if (!input?.[0]?.match(/[A-Z]/)) {
+        return false;
     }
-    return num;
-}
-
-
-
-function padStart(s: string, targetLength: number, padString: string) {
-    s = String(s);
-    while (s.length < targetLength) {
-        s = padString + s;
+    for (var i = 1; i < 4; i++) {
+        if (!input?.[i]?.match(/[0-9]/)) {
+            return false;
+        }
     }
-    return s;
+    return true;
 }
 
+export function checkStringFormat2(input?: string) {
+    if (!input) return false;
 
-function padEnd(s: string, targetLength: number, padString: string) {
-    s = String(s);
-    while (s.length < targetLength) {
-        s = s + padString;
+    for (var i = 1; i < 3; i++) {
+        if (!input[i]?.match(/[0-9]/)) {
+            return false;
+        }
     }
-    return s;
+    return true;
 }
 
 
-export function date2Rtime(datetime: string) {
-    var s = datetime.toString();
-    var simpleYear = parseInt(s.slice(0, 4)) - START_YEAR;
-    var month = parseInt(s.slice(4, 6));
-    var date = parseInt(s.slice(6, 8));
-    var hour = parseInt(s.slice(8, 10));
-    var minute = parseInt(s.slice(10, 12));
-    var second = Math.floor(parseInt(s.slice(12, 14)) / 4);
+export function calcJson(text: string) {
 
-    var yearMonthRtime = (simpleYear << 4) | month;
-    var hmsRtime = (hour << 10) | (minute << 4) | second;
+    var prior = "";
+    var identifier = "";
 
-    var rtimeKey = num2key(yearMonthRtime.toString()).join("") + num2key(date.toString()).join("") + num2key(hmsRtime.toString()).join("");
-    rtimeKey = padEnd(rtimeKey, 6, '0');
-    return rtimeKey;
+
+    var priorIndex = text.indexOf("-");
+
+    if (priorIndex == 3 || priorIndex == 4 || priorIndex == 8) {
+        var prefixText = text.slice(0, priorIndex);
+        if (prefixText.indexOf(".") > 0) {
+            var t1 = prefixText.split(".")[0];
+            var t2 = prefixText.split(".")[1];
+            if (checkStringFormat(t1) && checkStringFormat2(t2)) {
+                prior = t1!;
+                identifier = t2!;
+                text = text.slice(priorIndex + 1);
+            }
+        } else {
+            if (checkStringFormat(prefixText)) {
+                prior = prefixText;
+                text = text.slice(priorIndex + 1);
+            } else if (checkStringFormat2(prefixText)) {
+                identifier = prefixText;
+                text = text.slice(priorIndex + 1);
+            }
+        }
+    }
+
+    var tip = "";
+    var tag = "";
+    var name = "";
+    var time = "";
+    var person = "";
+
+    var tagIndex = text.indexOf("&");
+    var personIndex = text.indexOf("@");
+    var tipIndex = text.indexOf("$");
+    var timeIndex = text.lastIndexOf("-");
+
+    if ([6, 8, 15].includes(text.length - timeIndex)) {
+        var timeStr = text.slice(timeIndex + 1);
+        if (!timeStr.match(/[0-9]/) && ![6, 8, 15].includes(timeStr.length)) {
+            timeIndex = -1;
+        }
+    }
+
+    //name&tag@person$tip-time
+    function output(index = 0) {
+        var json = {
+            index: index,
+            name: name,
+            tag: tag,
+            person: person,
+            time: time,
+            tip: tip,
+            prior: prior,
+            identifier: identifier
+        }
+        return (JSON.stringify(json))
+    }
+
+
+    //name
+    if (timeIndex < 0 && personIndex < 0 && tagIndex < 0 && tipIndex < 0) {
+        name = text;
+        return output();
+    }
+
+    //name$tip
+    if (tagIndex < 0 && personIndex < 0 && timeIndex < 0 && tipIndex > 0) {
+        name = text.slice(0, tipIndex);
+        tip = text.slice(tipIndex + 1);
+        return output(1);
+    }
+
+
+    //name-time
+    if (tagIndex < 0 && personIndex < 0 && tipIndex < 0 && timeIndex > 0) {
+        name = text.slice(0, timeIndex);
+        time = text.slice(timeIndex + 1);
+        return output(0);
+    }
+
+    //name@person
+    if (tagIndex < 0 && tipIndex < 0 && timeIndex < 0 && personIndex > 0) {
+        name = text.slice(0, personIndex);
+        person = text.slice(personIndex + 1);
+        return output(1);
+    }
+
+    //name&tag
+    if (personIndex < 0 && tipIndex < 0 && timeIndex < 0 && tagIndex > 0) {
+        name = text.slice(0, tagIndex);
+        tag = text.slice(tagIndex + 1);
+        return output(2);
+    }
+
+    //name@person-time
+    if (tagIndex < 0 && tipIndex < 0 && timeIndex > 0 && personIndex > 0) {
+        name = text.slice(0, personIndex);
+        person = text.slice(personIndex + 1, timeIndex);
+        time = text.slice(timeIndex + 1);
+        return output(3);
+    }
+
+    //name&tag-time
+    if (personIndex < 0 && tipIndex < 0 && tagIndex > 0 && timeIndex > 0) {
+        name = text.slice(0, tagIndex);
+        tag = text.slice(tagIndex + 1, timeIndex);
+
+        time = text.slice(timeIndex + 1);
+        return output(4);
+    }
+
+    //name$tip-time
+    if (personIndex < 0 && tagIndex < 0 && tipIndex > 0 && timeIndex > 0) {
+        name = text.slice(0, tipIndex);
+        tip = text.slice(tipIndex + 1, timeIndex);
+
+        time = text.slice(timeIndex + 1);
+        return output(5);
+    }
+
+    //name&tag$tip-time
+    if (personIndex < 0 && timeIndex > 0 && tagIndex > 0 && tipIndex > 0) {
+        person = "";
+        name = text.slice(0, tagIndex);
+        tag = text.slice(tagIndex + 1, tipIndex);
+        tip = text.slice(tipIndex + 1, timeIndex);
+
+        time = text.slice(timeIndex + 1);
+        return output(6);
+    }
+
+    //name@person$tip
+    if (tagIndex < 0 && timeIndex < 0 && personIndex > 0 && tipIndex > 0) {
+        name = text.slice(0, personIndex);
+        person = text.slice(personIndex + 1, tipIndex);
+        tip = text.slice(tipIndex + 1, timeIndex);
+        return output(7);
+    }
+
+    //name@person$tip-time
+    if (tagIndex < 0 && timeIndex > 0 && personIndex > 0 && tipIndex > 0) {
+        name = text.slice(0, personIndex);
+        person = text.slice(personIndex + 1, tipIndex);
+        tip = text.slice(tipIndex + 1, timeIndex);
+
+        time = text.slice(timeIndex + 1);
+        return output(7);
+    }
+
+    //name&tag@person
+    if (tipIndex < 0 && timeIndex < 0 && personIndex > 0 && tagIndex > 0) {
+        name = text.slice(0, tagIndex);
+        tag = text.slice(tagIndex + 1, personIndex);
+        person = text.slice(personIndex + 1, timeIndex);
+        return output(8);
+    }
+
+    //name&tag@person-time
+    if (tipIndex < 0 && timeIndex > 0 && personIndex > 0 && tagIndex > 0) {
+        name = text.slice(0, tagIndex);
+        tag = text.slice(tagIndex + 1, personIndex);
+        person = text.slice(personIndex + 1, timeIndex);
+        time = text.slice(timeIndex + 1);
+        return output(8);
+    }
+
+    //name&tag@person$tip
+    if (tipIndex > 0 && timeIndex < 0 && personIndex > 0 && tagIndex > 0) {
+        name = text.slice(0, tagIndex);
+        tag = text.slice(tagIndex + 1, personIndex);
+        person = text.slice(personIndex + 1, tipIndex);
+        tip = text.slice(tipIndex + 1);
+        return output(8);
+    }
+
+    //name&tag@person$tip-time
+    if (tagIndex > 0 && personIndex > 0 && tipIndex > 0 && timeIndex > 0) {
+        name = text.slice(0, tagIndex);
+        tag = text.slice(tagIndex + 1, personIndex);
+        person = text.slice(personIndex + 1, tipIndex);
+        tip = text.slice(tipIndex + 1, timeIndex);
+        time = text.slice(timeIndex + 1);
+        return output(9);
+    }
 }
 
-export function rtime2Date(rtimeKey: string) {
-    var hmsRtime = key2num(rtimeKey.slice(3, 6));
-    var yearMonthRtime = key2num(rtimeKey.slice(0, 2));
-    var date = String(key2num(rtimeKey.slice(2, 3)));
-
-    var year = (yearMonthRtime >> 4) + START_YEAR;
-    var month = String(yearMonthRtime & 0b1111);
-    var hour = hmsRtime >> 10;
-    var minute = (hmsRtime >> 4) & 0b111111;
-    var second = 4 * (hmsRtime & 0b1111);
-    var datetime = year + padStart(month, 2, '0') + padStart(date, 2, '0') + padStart(hour.toString(), 2, '0') + padStart(minute.toString(), 2, '0') + padStart(second.toString(), 2, '0');
-    return datetime;
-}
-
-
-export const getDateString = () => {
-    const now = new Date();
-
-    const year = now.getFullYear();
-    const month = ('0' + (now.getMonth() + 1)).slice(-2);
-    const day = ('0' + now.getDate()).slice(-2);
-    const hours = ('0' + now.getHours()).slice(-2);
-    const minutes = ('0' + now.getMinutes()).slice(-2);
-    const seconds = ('0' + now.getSeconds()).slice(-2);
-
-    const formattedTime = year + month + day + hours + minutes + seconds;
-    return formattedTime;
-
+export function parseInput(input: string) {
+    let json = {} as any;
+    const jsonText = calcJson(input) || "";
+    try {
+        json = JSON.parse(jsonText);
+        json.time = json.time.replace('(', '').replace(')', '');
+        json.time = rtime2Date(json.time);
+    } catch (e) { }
+    finally {
+        return json;
+    }
 }

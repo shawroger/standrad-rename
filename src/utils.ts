@@ -1,4 +1,4 @@
-import { date2Rtime, rtime2Date } from "./xid";
+import { rtime2Date } from "./xid";
 
 export function checkStringFormat(input?: string) {
     if (input && input.length < 4) {
